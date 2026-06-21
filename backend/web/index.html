@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>剪贴板同步 - Web端</title>
+    <link rel="stylesheet" href="/web/css/style.css">
+</head>
+<body>
+    <div id="app">
+        <div id="auth-page" class="auth-container">
+            <div class="auth-card">
+                <div class="logo">
+                    <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="8" y="2" width="8" height="4" rx="1"/>
+                        <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+                        <rect x="9" y="12" width="6" height="8" rx="1"/>
+                        <path d="M9 16h6"/>
+                    </svg>
+                </div>
+                <h1 class="app-title">剪贴板同步</h1>
+                <p class="subtitle">跨设备实时剪贴板同步工具</p>
+
+                <div class="tabs">
+                    <button id="tab-login" class="tab-btn active" onclick="switchTab('login')">登录</button>
+                    <button id="tab-register" class="tab-btn" onclick="switchTab('register')">注册</button>
+                </div>
+
+                <form id="login-form" class="auth-form" onsubmit="handleLogin(event)">
+                    <div class="form-group">
+                        <label>用户名</label>
+                        <input type="text" id="login-username" placeholder="请输入用户名" required>
+                    </div>
+                    <div class="form-group">
+                        <label>密码</label>
+                        <input type="password" id="login-password" placeholder="请输入密码" required>
+                    </div>
+                    <button type="submit" class="btn-primary">登 录</button>
+                </form>
+
+                <form id="register-form" class="auth-form hidden" onsubmit="handleRegister(event)">
+                    <div class="form-group">
+                        <label>用户名</label>
+                        <input type="text" id="register-username" placeholder="3-50个字符" required minlength="3" maxlength="50">
+                    </div>
+                    <div class="form-group">
+                        <label>密码</label>
+                        <input type="password" id="register-password" placeholder="至少6位" required minlength="6">
+                    </div>
+                    <div class="form-group">
+                        <label>邮箱（可选）</label>
+                        <input type="email" id="register-email" placeholder="your@email.com">
+                    </div>
+                    <button type="submit" class="btn-primary">注 册</button>
+                </form>
+            </div>
+        </div>
+
+        <div id="main-page" class="main-container hidden">
+            <header class="main-header">
+                <div class="header-left">
+                    <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="8" y="2" width="8" height="4" rx="1"/>
+                        <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+                        <rect x="9" y="12" width="6" height="8" rx="1"/>
+                        <path d="M9 16h6"/>
+                    </svg>
+                    <h1>剪贴板同步</h1>
+                </div>
+                <div class="header-right">
+                    <span id="user-display" class="user-display"></span>
+                    <span id="ws-status" class="ws-status disconnected">
+                        <span class="status-dot"></span>
+                        <span class="status-text">离线</span>
+                    </span>
+                    <button class="btn-icon" onclick="logout()" title="退出登录">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                            <polyline points="16 17 21 12 16 7"/>
+                            <line x1="21" y1="12" x2="9" y2="12"/>
+                        </svg>
+                    </button>
+                </div>
+            </header>
+
+            <main class="main-content">
+                <section class="sync-section">
+                    <div class="section-header">
+                        <h2>发送内容</h2>
+                        <span class="device-tag">Web端</span>
+                    </div>
+                    <textarea id="clipboard-input" placeholder="在此输入或粘贴要同步的文本内容...（非中文将自动翻译）"></textarea>
+                    <div class="action-row">
+                        <button class="btn-secondary" onclick="pasteFromClipboard()">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+                                <rect x="8" y="2" width="8" height="4" rx="1"/>
+                            </svg>
+                            从剪贴板粘贴
+                        </button>
+                        <button class="btn-primary" onclick="syncClipboard()">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="22" y1="2" x2="11" y2="13"/>
+                                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                            </svg>
+                            同步到所有设备
+                        </button>
+                    </div>
+                </section>
+
+                <section class="history-section">
+                    <div class="section-header">
+                        <h2>同步历史</h2>
+                        <button class="btn-link" onclick="loadHistory()">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="23 4 23 10 17 10"/>
+                                <polyline points="1 20 1 14 7 14"/>
+                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                            </svg>
+                            刷新
+                        </button>
+                    </div>
+                    <div id="history-list" class="history-list"></div>
+                </section>
+
+                <section class="devices-section">
+                    <div class="section-header">
+                        <h2>已绑定设备</h2>
+                    </div>
+                    <div id="devices-list" class="devices-list"></div>
+                </section>
+            </main>
+        </div>
+
+        <div id="toast" class="toast hidden"></div>
+    </div>
+
+    <script src="/web/js/app.js"></script>
+</body>
+</html>
