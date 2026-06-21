@@ -5,6 +5,8 @@ let user = JSON.parse(localStorage.getItem('user') || 'null');
 let deviceId = localStorage.getItem('device_id') || generateDeviceId();
 let ws = null;
 let heartbeatInterval = null;
+let historyItems = [];
+let maxSeqId = 0;
 
 localStorage.setItem('device_id', deviceId);
 
@@ -155,6 +157,8 @@ function connectWebSocket() {
             const msg = JSON.parse(event.data);
             if (msg.type === 'clipboard_sync') {
                 onClipboardReceived(msg.data);
+            } else if (msg.type === 'translation_update') {
+                onTranslationUpdate(msg.data);
             }
         } catch (e) {
             console.error('解析WebSocket消息失败:', e);
@@ -183,9 +187,45 @@ function updateWSStatus(connected) {
     el.querySelector('.status-text').textContent = connected ? '在线' : '离线';
 }
 
+function normalizeItem(it) {
+    if (it.seq_id === undefined || it.seq_id === null) {
+        it.seq_id = Date.now();
+    }
+    return it;
+}
+
+function insertHistoryItem(item) {
+    normalizeItem(item);
+
+    const exists = historyItems.some(it => it.id === item.id);
+    if (!exists) {
+        historyItems.push(item);
+    }
+
+    historyItems.sort((a, b) => (b.seq_id || 0) - (a.seq_id || 0));
+
+    if (historyItems.length > 100) {
+        historyItems = historyItems.slice(0, 100);
+    }
+
+    maxSeqId = Math.max(maxSeqId, item.seq_id || 0);
+    renderHistory(historyItems);
+}
+
 function onClipboardReceived(data) {
     showToast(`收到来自 ${data.device_name || '其他设备'} 的内容`, 'success');
-    prependHistoryItem(data);
+    insertHistoryItem(data);
+}
+
+function onTranslationUpdate(data) {
+    const idx = historyItems.findIndex(it => it.id === data.id);
+    if (idx !== -1) {
+        historyItems[idx].translation = data.translation;
+        historyItems[idx].is_translated = true;
+        historyItems[idx].seq_id = data.seq_id;
+        renderHistory(historyItems);
+        showToast('翻译已更新', 'success');
+    }
 }
 
 async function syncClipboard() {
@@ -206,7 +246,7 @@ async function syncClipboard() {
         showToast('同步成功！', 'success');
         document.getElementById('clipboard-input').value = '';
 
-        prependHistoryItem(result.item);
+        insertHistoryItem(result.item);
     } catch (err) {
         showToast(err.message, 'error');
     }
@@ -243,8 +283,16 @@ async function copyToClipboard(text) {
 
 async function loadHistory() {
     try {
-        const result = await apiCall('/clipboard/history?limit=20&offset=0');
-        renderHistory(result.items || []);
+        const result = await apiCall('/clipboard/history?limit=50&offset=0');
+        const items = result.items || [];
+
+        items.forEach(it => normalizeItem(it));
+        historyItems = items.sort((a, b) => (b.seq_id || 0) - (a.seq_id || 0));
+        if (historyItems.length > 0) {
+            maxSeqId = Math.max(...historyItems.map(it => it.seq_id || 0));
+        }
+
+        renderHistory(historyItems);
     } catch (err) {
         showToast('加载历史失败: ' + err.message, 'error');
     }
@@ -269,21 +317,12 @@ function renderHistory(items) {
     container.innerHTML = items.map(item => historyItemHTML(item)).join('');
 }
 
-function prependHistoryItem(item) {
-    const container = document.getElementById('history-list');
-    const empty = container.querySelector('.history-empty');
-    if (empty) empty.remove();
-
-    const div = document.createElement('div');
-    div.innerHTML = historyItemHTML(item);
-    container.insertBefore(div.firstElementChild, container.firstChild);
-}
-
 function historyItemHTML(item) {
     const time = formatTime(item.created_at);
     const device = escapeHTML(item.device_name || '未知设备');
     const content = escapeHTML(item.content || '');
     const translation = item.is_translated && item.translation ? escapeHTML(item.translation) : '';
+    const seqBadge = item.seq_id ? `<span style="font-size:11px;color:var(--text-muted);margin-left:6px;font-weight:400;">#${item.seq_id}</span>` : '';
 
     let translationHTML = '';
     if (translation) {
@@ -314,7 +353,7 @@ function historyItemHTML(item) {
                         <line x1="8" y1="21" x2="16" y2="21"/>
                         <line x1="12" y1="17" x2="12" y2="21"/>
                     </svg>
-                    ${device}
+                    ${device}${seqBadge}
                 </span>
                 <span class="history-time">${time}</span>
             </div>

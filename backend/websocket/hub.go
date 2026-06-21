@@ -27,12 +27,19 @@ type WSMessage struct {
 
 type ClipboardSyncData struct {
 	ID           uint   `json:"id"`
+	SeqID        int64  `json:"seq_id"`
 	Content      string `json:"content"`
 	Translation  string `json:"translation,omitempty"`
 	DeviceName   string `json:"device_name"`
 	IsTranslated bool   `json:"is_translated"`
 	ContentType  string `json:"content_type"`
 	CreatedAt    string `json:"created_at"`
+}
+
+type TranslationUpdateData struct {
+	ID          uint   `json:"id"`
+	SeqID       int64  `json:"seq_id"`
+	Translation string `json:"translation"`
 }
 
 type Client struct {
@@ -143,26 +150,35 @@ func (h *Hub) broadcastToUser(message WSMessage) {
 }
 
 func (h *Hub) SendClipboardSync(userID uint, data ClipboardSyncData, fromDevice string) {
-	msg := WSMessage{
-		Type:       "clipboard_sync",
-		Data:       data,
-		Timestamp:  time.Now().Unix(),
-		FromDevice: fromDevice,
-	}
-
 	msgWithUser := WSMessage{
-		Type:      msg.Type,
-		Timestamp: msg.Timestamp,
+		Type:       "clipboard_sync",
+		Timestamp:  time.Now().Unix(),
 		FromDevice: fromDevice,
 		Data: map[string]interface{}{
 			"user_id":       userID,
 			"id":            data.ID,
+			"seq_id":        data.SeqID,
 			"content":       data.Content,
 			"translation":   data.Translation,
 			"device_name":   data.DeviceName,
 			"is_translated": data.IsTranslated,
 			"content_type":  data.ContentType,
 			"created_at":    data.CreatedAt,
+		},
+	}
+
+	h.Broadcast <- msgWithUser
+}
+
+func (h *Hub) SendTranslationUpdate(userID uint, data TranslationUpdateData) {
+	msgWithUser := WSMessage{
+		Type:      "translation_update",
+		Timestamp: time.Now().Unix(),
+		Data: map[string]interface{}{
+			"user_id":     userID,
+			"id":          data.ID,
+			"seq_id":      data.SeqID,
+			"translation": data.Translation,
 		},
 	}
 

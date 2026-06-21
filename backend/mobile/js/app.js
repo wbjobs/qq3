@@ -5,6 +5,8 @@ let user = JSON.parse(localStorage.getItem('user') || 'null');
 let deviceId = localStorage.getItem('device_id') || generateDeviceId();
 let ws = null;
 let heartbeatInterval = null;
+let historyItems = [];
+let maxSeqId = 0;
 
 localStorage.setItem('device_id', deviceId);
 
@@ -153,6 +155,8 @@ function connectWebSocket() {
             const msg = JSON.parse(event.data);
             if (msg.type === 'clipboard_sync') {
                 onClipboardReceived(msg.data);
+            } else if (msg.type === 'translation_update') {
+                onTranslationUpdate(msg.data);
             }
         } catch (e) {
             console.error('WS parse error:', e);
@@ -178,7 +182,43 @@ function updateWSStatus(connected) {
 function onClipboardReceived(data) {
     if (navigator.vibrate) navigator.vibrate(50);
     showToast(`收到来自 ${data.device_name || '其他设备'} 的内容`, 'success');
-    prependHistoryItem(data);
+    insertHistoryItem(data);
+}
+
+function onTranslationUpdate(data) {
+    const idx = historyItems.findIndex(it => it.id === data.id);
+    if (idx !== -1) {
+        historyItems[idx].translation = data.translation;
+        historyItems[idx].is_translated = true;
+        historyItems[idx].seq_id = data.seq_id;
+        renderHistory(historyItems);
+        showToast('翻译已更新', 'success');
+    }
+}
+
+function normalizeItem(it) {
+    if (it.seq_id === undefined || it.seq_id === null) {
+        it.seq_id = Date.now();
+    }
+    return it;
+}
+
+function insertHistoryItem(item) {
+    normalizeItem(item);
+
+    const exists = historyItems.some(it => it.id === item.id);
+    if (!exists) {
+        historyItems.push(item);
+    }
+
+    historyItems.sort((a, b) => (b.seq_id || 0) - (a.seq_id || 0));
+
+    if (historyItems.length > 100) {
+        historyItems = historyItems.slice(0, 100);
+    }
+
+    maxSeqId = Math.max(maxSeqId, item.seq_id || 0);
+    renderHistory(historyItems);
 }
 
 async function syncClipboard() {
@@ -196,7 +236,7 @@ async function syncClipboard() {
         });
         showToast('已同步到所有设备！', 'success');
         document.getElementById('clipboard-input').value = '';
-        prependHistoryItem(result.item);
+        insertHistoryItem(result.item);
     } catch (err) {
         showToast(err.message, 'error');
     }
@@ -237,10 +277,17 @@ async function copyToClipboard(text) {
 
 async function loadHistory() {
     try {
-        const result = await apiCall('/clipboard/history?limit=20&offset=0');
+        const result = await apiCall('/clipboard/history?limit=50&offset=0');
         const items = result.items || [];
         document.getElementById('history-count').textContent = `共 ${result.total || items.length} 条`;
-        renderHistory(items);
+
+        items.forEach(it => normalizeItem(it));
+        historyItems = items.sort((a, b) => (b.seq_id || 0) - (a.seq_id || 0));
+        if (historyItems.length > 0) {
+            maxSeqId = Math.max(...historyItems.map(it => it.seq_id || 0));
+        }
+
+        renderHistory(historyItems);
     } catch (err) {
         showToast('加载失败: ' + err.message, 'error');
     }
@@ -265,22 +312,13 @@ function renderHistory(items) {
     container.innerHTML = items.map(it => historyItemHTML(it)).join('');
 }
 
-function prependHistoryItem(item) {
-    const container = document.getElementById('history-list');
-    const empty = container.querySelector('.m-empty');
-    if (empty) empty.remove();
-
-    const div = document.createElement('div');
-    div.innerHTML = historyItemHTML(item);
-    container.insertBefore(div.firstElementChild, container.firstChild);
-}
-
 function historyItemHTML(it) {
     const time = formatTime(it.created_at);
     const device = escapeHTML(it.device_name || '未知设备');
     const content = escapeHTML(it.content || '');
     const translation = it.is_translated && it.translation ? escapeHTML(it.translation) : '';
     const hasTrans = !!translation;
+    const seqBadge = it.seq_id ? `<span style="font-size:10px;color:var(--text-3);margin-left:4px;">#${it.seq_id}</span>` : '';
 
     let transHTML = '';
     if (hasTrans) {
@@ -310,7 +348,7 @@ function historyItemHTML(it) {
                         <rect x="5" y="2" width="14" height="20" rx="2"/>
                         <rect x="2" y="3" width="20" height="14" rx="2"/>
                     </svg>
-                    ${device}
+                    ${device}${seqBadge}
                 </span>
                 <span class="m-hi-time">${time}</span>
             </div>

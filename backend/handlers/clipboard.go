@@ -4,6 +4,7 @@ import (
 	"clipboard-sync/models"
 	"clipboard-sync/services"
 	"clipboard-sync/websocket"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -32,6 +33,7 @@ type SyncClipboardRequest struct {
 
 func (h *ClipboardHandler) SyncClipboard(c *gin.Context) {
 	userID, _ := c.Get("user_id")
+	uid := userID.(uint)
 
 	var req SyncClipboardRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -46,16 +48,23 @@ func (h *ClipboardHandler) SyncClipboard(c *gin.Context) {
 		req.DeviceName = "未知设备"
 	}
 
-	translation, needsTrans, _ := h.TranslateService.ProcessClipboardContent(req.Content)
+	seqID, err := models.GetNextSeqID(uid)
+	if err != nil {
+		log.Printf("Get seq_id error: %v", err)
+		seqID = time.Now().UnixNano()
+	}
+
+	needsTrans := h.TranslateService.NeedsTranslation(req.Content)
 
 	item := &models.ClipboardItem{
-		UserID:       userID.(uint),
+		UserID:       uid,
+		SeqID:        seqID,
 		Content:      req.Content,
-		Translation:  translation,
+		Translation:  "",
 		SourceDevice: req.DeviceID,
 		DeviceName:   req.DeviceName,
 		ContentType:  req.ContentType,
-		IsTranslated: needsTrans,
+		IsTranslated: false,
 		CreatedAt:    time.Now(),
 	}
 
@@ -64,8 +73,9 @@ func (h *ClipboardHandler) SyncClipboard(c *gin.Context) {
 		return
 	}
 
-	go h.Hub.SendClipboardSync(userID.(uint), websocket.ClipboardSyncData{
+	go h.Hub.SendClipboardSync(uid, websocket.ClipboardSyncData{
 		ID:           item.ID,
+		SeqID:        item.SeqID,
 		Content:      item.Content,
 		Translation:  item.Translation,
 		DeviceName:   item.DeviceName,
@@ -74,10 +84,54 @@ func (h *ClipboardHandler) SyncClipboard(c *gin.Context) {
 		CreatedAt:    item.CreatedAt.Format(time.RFC3339),
 	}, req.DeviceID)
 
+	if needsTrans {
+		go h.processTranslationAsync(uid, item, req.DeviceID)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "同步成功",
 		"item":    item,
 	})
+}
+
+func (h *ClipboardHandler) processTranslationAsync(userID uint, item *models.ClipboardItem, fromDevice string) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Translation goroutine panic: %v", r)
+		}
+	}()
+
+	translation, err := h.TranslateService.TranslateToChinese(item.Content)
+	if err != nil {
+		log.Printf("Translate error for item %d: %v", item.ID, err)
+		return
+	}
+	if translation == "" {
+		return
+	}
+
+	item.Translation = translation
+	item.IsTranslated = true
+
+	if err := models.DB.Model(item).Updates(map[string]interface{}{
+		"translation":   translation,
+		"is_translated": true,
+	}).Error; err != nil {
+		log.Printf("Update translation DB error: %v", err)
+		return
+	}
+
+	if err := models.PushClipboardToRedis(userID, item); err != nil {
+		log.Printf("Update translation Redis error: %v", err)
+	}
+
+	go h.Hub.SendTranslationUpdate(userID, websocket.TranslationUpdateData{
+		ID:          item.ID,
+		SeqID:       item.SeqID,
+		Translation: translation,
+	})
+
+	log.Printf("Translation completed for item %d, seq=%d", item.ID, item.SeqID)
 }
 
 func (h *ClipboardHandler) GetHistory(c *gin.Context) {

@@ -40,6 +40,7 @@ type Device struct {
 type ClipboardItem struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
 	UserID       uint      `gorm:"index;not null" json:"user_id"`
+	SeqID        int64     `gorm:"index;not null" json:"seq_id"`
 	Content      string    `gorm:"type:text;not null" json:"content"`
 	Translation  string    `gorm:"type:text" json:"translation,omitempty"`
 	SourceDevice string    `gorm:"size:100" json:"source_device"`
@@ -47,6 +48,11 @@ type ClipboardItem struct {
 	ContentType  string    `gorm:"size:20;default:'text'" json:"content_type"`
 	IsTranslated bool      `gorm:"default:false" json:"is_translated"`
 	CreatedAt    time.Time `json:"created_at"`
+}
+
+func GetNextSeqID(userID uint) (int64, error) {
+	key := fmt.Sprintf("seq:user:%d", userID)
+	return RDB.Incr(Ctx, key).Result()
 }
 
 func (u *User) HashPassword(password string) error {
@@ -137,7 +143,7 @@ func GetClipboardHistory(userID uint, limit, offset int) ([]ClipboardItem, int64
 	var total int64
 
 	DB.Model(&ClipboardItem{}).Where("user_id = ?", userID).Count(&total)
-	err := DB.Where("user_id = ?", userID).Order("created_at DESC").
+	err := DB.Where("user_id = ?", userID).Order("seq_id DESC").
 		Limit(limit).Offset(offset).Find(&items).Error
 
 	if len(items) == 0 {
