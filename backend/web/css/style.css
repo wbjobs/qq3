@@ -608,3 +608,330 @@ textarea:focus {
         grid-template-columns: 1fr;
     }
 }
+
+.settings-panel {
+    background: var(--bg-card);
+    border-radius: var(--radius-md);
+    padding: 24px;
+    box-shadow: var(--shadow-sm);
+    border: 2px solid rgba(99, 102, 241, 0.1);
+    animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.settings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.setting-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px;
+    background: var(--bg-input);
+    border-radius: var(--radius-sm);
+    transition: var(--transition);
+}
+
+.setting-item:hover {
+    background: var(--border-color);
+}
+
+.setting-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.setting-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.setting-title svg {
+    color: var(--primary-color);
+    flex-shrink: 0;
+}
+
+.setting-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 52px;
+    height: 28px;
+    flex-shrink: 0;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--border-color);
+    transition: .3s;
+    border-radius: 34px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 22px;
+    width: 22px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: .3s;
+    border-radius: 50%;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+input:checked + .slider {
+    background-color: var(--primary-color);
+}
+
+input:checked + .slider:before {
+    transform: translateX(24px);
+}
+
+.sensitive-section {
+    padding-top: 20px;
+    border-top: 1px solid var(--border-color);
+}
+
+.sensitive-section h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.sensitive-actions {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.sensitive-actions input {
+    flex: 1;
+    padding: 10px 14px;
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    background: var(--bg-input);
+    outline: none;
+    transition: var(--transition);
+}
+
+.sensitive-actions input:focus {
+    border-color: var(--primary-color);
+    background: var(--bg-card);
+}
+
+.default-patterns {
+    margin-bottom: 16px;
+}
+
+.patterns-title,
+.custom-words-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.patterns-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.pattern-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 12px;
+    background: rgba(99, 102, 241, 0.1);
+    color: var(--primary-color);
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.sensitive-words-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 40px;
+    padding: 12px;
+    background: var(--bg-input);
+    border-radius: var(--radius-sm);
+}
+
+.sensitive-words-list:empty::before {
+    content: '暂无自定义敏感词，在上方输入后点击添加';
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.word-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px 6px 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    font-size: 12px;
+    color: var(--text-primary);
+    transition: var(--transition);
+}
+
+.word-chip:hover {
+    border-color: var(--danger-color);
+}
+
+.word-chip .remove-word {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: none;
+    background: var(--bg-input);
+    color: var(--text-muted);
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0;
+    transition: var(--transition);
+}
+
+.word-chip .remove-word:hover {
+    background: var(--danger-color);
+    color: white;
+}
+
+.filter-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-left: 4px solid var(--warning-color);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    color: var(--text-primary);
+    line-height: 1.6;
+}
+
+.filter-alert svg {
+    color: var(--warning-color);
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.filter-alert strong {
+    color: var(--warning-color);
+    font-weight: 600;
+}
+
+.filter-alert .hits-list {
+    margin-top: 4px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.filter-alert .hit-tag {
+    display: inline;
+    padding: 2px 8px;
+    background: var(--bg-card);
+    border-radius: 10px;
+    font-size: 11px;
+    color: var(--warning-color);
+    font-weight: 500;
+}
+
+.sync-status-tags {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.mode-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    background: rgba(100, 116, 139, 0.15);
+    color: var(--secondary-color);
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.mode-tag svg {
+    flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+    .settings-panel {
+        padding: 16px;
+    }
+
+    .settings-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .setting-item {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .sensitive-actions {
+        flex-direction: column;
+    }
+
+    .sensitive-actions .btn-primary {
+        width: 100%;
+    }
+
+    .sync-status-tags {
+        flex-wrap: wrap;
+    }
+}

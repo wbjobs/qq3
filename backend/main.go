@@ -5,6 +5,7 @@ import (
 	"clipboard-sync/handlers"
 	"clipboard-sync/middleware"
 	"clipboard-sync/models"
+	"clipboard-sync/services"
 	"clipboard-sync/websocket"
 	"log"
 
@@ -16,6 +17,8 @@ func main() {
 
 	models.InitDB(cfg.MySQLDSN)
 	models.InitRedis(cfg.RedisAddr, cfg.RedisPwd, cfg.RedisDB)
+
+	initDefaultSensitiveWords()
 
 	hub := websocket.NewHub()
 	go hub.Run()
@@ -36,6 +39,7 @@ func main() {
 	authHandler := handlers.NewAuthHandler(cfg.JWTSecret)
 	clipboardHandler := handlers.NewClipboardHandler(hub)
 	deviceHandler := handlers.NewDeviceHandler()
+	adminHandler := handlers.NewAdminHandler()
 
 	api := r.Group("/api")
 	{
@@ -57,6 +61,15 @@ func main() {
 				deviceID := c.Query("device_id")
 				websocket.ServeWS(hub, c.Writer, c.Request, userID.(uint), deviceID)
 			})
+
+			auth.GET("/settings", adminHandler.GetUserSettings)
+			auth.POST("/settings/silent-mode", adminHandler.SetSilentMode)
+			auth.POST("/settings/filter", adminHandler.SetFilterEnable)
+
+			auth.GET("/sensitive-words", adminHandler.ListSensitiveWords)
+			auth.POST("/sensitive-words", adminHandler.AddSensitiveWord)
+			auth.DELETE("/sensitive-words", adminHandler.RemoveSensitiveWord)
+			auth.POST("/sensitive-words/test", adminHandler.TestFilter)
 		}
 	}
 
@@ -65,4 +78,24 @@ func main() {
 
 	log.Println("Server starting on", cfg.ServerPort)
 	log.Fatal(r.Run(cfg.ServerPort))
+}
+
+func initDefaultSensitiveWords() {
+	svc := services.NewSensitiveWordService()
+	defaults := []string{
+		"密码",
+		"验证码",
+		"银行卡密码",
+		"支付密码",
+		"身份证号",
+		"身份证号码",
+		"手机号",
+		"电话号码",
+	}
+	for _, word := range defaults {
+		if err := svc.AddCustomWord(word); err != nil {
+			log.Printf("Init default sensitive word [%s] error: %v", word, err)
+		}
+	}
+	log.Println("Default sensitive words initialized:", len(defaults))
 }

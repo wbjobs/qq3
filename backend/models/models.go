@@ -47,7 +47,17 @@ type ClipboardItem struct {
 	DeviceName   string    `gorm:"size:100" json:"device_name"`
 	ContentType  string    `gorm:"size:20;default:'text'" json:"content_type"`
 	IsTranslated bool      `gorm:"default:false" json:"is_translated"`
+	IsFiltered   bool      `gorm:"default:false" json:"is_filtered"`
+	FilteredHits string    `gorm:"type:text" json:"filtered_hits,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
+}
+
+type UserSettings struct {
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	UserID       uint      `gorm:"uniqueIndex;not null" json:"user_id"`
+	SilentMode   bool      `gorm:"default:false" json:"silent_mode"`
+	FilterEnable bool      `gorm:"default:true" json:"filter_enable"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 func GetNextSeqID(userID uint) (int64, error) {
@@ -76,7 +86,7 @@ func InitDB(dsn string) {
 		log.Fatal("Failed to connect MySQL:", err)
 	}
 
-	err = DB.AutoMigrate(&User{}, &Device{}, &ClipboardItem{})
+	err = DB.AutoMigrate(&User{}, &Device{}, &ClipboardItem{}, &UserSettings{})
 	if err != nil {
 		log.Fatal("Failed to migrate:", err)
 	}
@@ -154,4 +164,53 @@ func GetClipboardHistory(userID uint, limit, offset int) ([]ClipboardItem, int64
 	}
 
 	return items, total, err
+}
+
+func GetUserSettings(userID uint) (*UserSettings, error) {
+	var settings UserSettings
+	err := DB.Where("user_id = ?", userID).First(&settings).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			settings = UserSettings{
+				UserID:       userID,
+				SilentMode:   false,
+				FilterEnable: true,
+			}
+			DB.Create(&settings)
+			return &settings, nil
+		}
+		return nil, err
+	}
+	return &settings, nil
+}
+
+func UpdateUserSettings(settings *UserSettings) error {
+	settings.UpdatedAt = time.Now()
+	return DB.Save(settings).Error
+}
+
+func SetSilentMode(userID uint, silent bool) (*UserSettings, error) {
+	settings, err := GetUserSettings(userID)
+	if err != nil {
+		return nil, err
+	}
+	settings.SilentMode = silent
+	settings.UpdatedAt = time.Now()
+	if err := DB.Save(settings).Error; err != nil {
+		return nil, err
+	}
+	return settings, nil
+}
+
+func SetFilterEnable(userID uint, enable bool) (*UserSettings, error) {
+	settings, err := GetUserSettings(userID)
+	if err != nil {
+		return nil, err
+	}
+	settings.FilterEnable = enable
+	settings.UpdatedAt = time.Now()
+	if err := DB.Save(settings).Error; err != nil {
+		return nil, err
+	}
+	return settings, nil
 }

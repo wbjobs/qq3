@@ -7,6 +7,7 @@ let ws = null;
 let heartbeatInterval = null;
 let historyItems = [];
 let maxSeqId = 0;
+let currentSettings = { silent_mode: false, filter_enable: true };
 
 localStorage.setItem('device_id', deviceId);
 
@@ -119,6 +120,138 @@ function onAuthSuccess(result) {
     connectWebSocket();
     loadHistory();
     loadDevices();
+    loadUserSettings();
+    loadSensitiveWords();
+}
+
+function toggleSettingsPanel() {
+    const panel = document.getElementById('settings-panel');
+    panel.classList.toggle('hidden');
+}
+
+async function loadUserSettings() {
+    try {
+        const result = await apiCall('/settings', 'GET');
+        currentSettings = result.settings || currentSettings;
+        applySettingsUI();
+    } catch (err) {
+        console.warn('加载设置失败:', err.message);
+    }
+}
+
+function applySettingsUI() {
+    document.getElementById('silent-mode-toggle').checked = !!currentSettings.silent_mode;
+    document.getElementById('filter-toggle').checked = !!currentSettings.filter_enable;
+
+    const silentTag = document.getElementById('silent-tag');
+    const syncBtnText = document.getElementById('sync-btn-text');
+
+    if (currentSettings.silent_mode) {
+        silentTag.style.display = 'inline-flex';
+        syncBtnText.textContent = '仅本地保存（静默模式）';
+    } else {
+        silentTag.style.display = 'none';
+        syncBtnText.textContent = '同步到所有设备';
+    }
+}
+
+async function setSilentMode(enabled) {
+    try {
+        const result = await apiCall('/settings/silent-mode', 'POST', { enabled });
+        currentSettings.silent_mode = enabled;
+        applySettingsUI();
+        showToast(enabled ? '静默模式已开启' : '静默模式已关闭', 'success');
+    } catch (err) {
+        document.getElementById('silent-mode-toggle').checked = !enabled;
+        showToast(err.message, 'error');
+    }
+}
+
+async function setFilterEnable(enabled) {
+    try {
+        const result = await apiCall('/settings/filter', 'POST', { enabled });
+        currentSettings.filter_enable = enabled;
+        showToast(enabled ? '敏感词过滤已开启' : '敏感词过滤已关闭', 'success');
+    } catch (err) {
+        document.getElementById('filter-toggle').checked = !enabled;
+        showToast(err.message, 'error');
+    }
+}
+
+async function loadSensitiveWords() {
+    try {
+        const result = await apiCall('/sensitive-words', 'GET');
+        renderSensitiveWords(result.words || []);
+    } catch (err) {
+        console.warn('加载敏感词失败:', err.message);
+    }
+}
+
+function renderSensitiveWords(words) {
+    const container = document.getElementById('sensitive-words-list');
+    if (!words.length) {
+        container.innerHTML = '';
+        return;
+    }
+    container.innerHTML = words.map(word => `
+        <span class="word-chip">
+            ${escapeHTML(word)}
+            <button class="remove-word" onclick="removeSensitiveWord(&quot;${escapeForJS(word)}&quot;)">&times;</button>
+        </span>
+    `).join('');
+}
+
+async function addSensitiveWord() {
+    const input = document.getElementById('new-sensitive-word');
+    const word = input.value.trim();
+    if (!word) {
+        showToast('请输入敏感词', 'warning');
+        return;
+    }
+    if (word.length > 50) {
+        showToast('敏感词长度不能超过50字符', 'warning');
+        return;
+    }
+    try {
+        await apiCall('/sensitive-words', 'POST', { word });
+        input.value = '';
+        showToast('敏感词已添加', 'success');
+        loadSensitiveWords();
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+}
+
+async function removeSensitiveWord(word) {
+    try {
+        await apiCall('/sensitive-words', 'DELETE', { word });
+        showToast('敏感词已删除', 'success');
+        loadSensitiveWords();
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+}
+
+function showFilterAlert(hits, original) {
+    const alert = document.getElementById('filter-alert');
+    const hitsHTML = hits && hits.length ? `
+        <div class="hits-list">
+            ${hits.map(h => `<span class="hit-tag">${escapeHTML(h)}</span>`).join('')}
+        </div>
+    ` : '';
+    alert.innerHTML = `
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+        <div>
+            <strong>内容已自动过滤敏感信息</strong>${hitsHTML}
+            <div style="margin-top:6px;font-size:12px;color:var(--text-muted);">已检测到敏感内容并替换为 *** 后推送。</div>
+        </div>
+    `;
+    alert.classList.remove('hidden');
+    setTimeout(() => alert.classList.add('hidden'), 6000);
 }
 
 async function bindDevice() {
@@ -243,7 +376,15 @@ async function syncClipboard() {
             content_type: 'text'
         });
 
-        showToast('同步成功！', 'success');
+        if (result.filtered_hits && result.filtered_hits.length) {
+            showFilterAlert(result.filtered_hits, content);
+        }
+
+        if (result.silent_mode) {
+            showToast('已保存到服务器（静默模式，未推送到其他设备）', 'success');
+        } else {
+            showToast('同步成功！', 'success');
+        }
         document.getElementById('clipboard-input').value = '';
 
         insertHistoryItem(result.item);
@@ -499,6 +640,8 @@ document.addEventListener('DOMContentLoaded', () => {
         connectWebSocket();
         loadHistory();
         loadDevices();
+        loadUserSettings();
+        loadSensitiveWords();
     }
 
     document.getElementById('clipboard-input').addEventListener('keydown', (e) => {

@@ -4,6 +4,7 @@ import (
 	"clipboard-sync/models"
 	"clipboard-sync/services"
 	"clipboard-sync/websocket"
+	"encoding/json"
 	"log"
 	"net/http"
 	"strconv"
@@ -15,12 +16,14 @@ import (
 type ClipboardHandler struct {
 	Hub              *websocket.Hub
 	TranslateService *services.TranslateService
+	SensitiveService *services.SensitiveWordService
 }
 
 func NewClipboardHandler(hub *websocket.Hub) *ClipboardHandler {
 	return &ClipboardHandler{
 		Hub:              hub,
 		TranslateService: services.NewTranslateService(),
+		SensitiveService: services.NewSensitiveWordService(),
 	}
 }
 
@@ -54,17 +57,52 @@ func (h *ClipboardHandler) SyncClipboard(c *gin.Context) {
 		seqID = time.Now().UnixNano()
 	}
 
-	needsTrans := h.TranslateService.NeedsTranslation(req.Content)
+	settings, _ := models.GetUserSettings(uid)
+
+	originalContent := req.Content
+	filteredContent := originalContent
+	hitWords := []string{}
+	isFiltered := false
+
+	if settings == nil {
+		settings = &models.UserSettings{FilterEnable: true, SilentMode: false}
+	}
+
+	if settings.FilterEnable {
+		var filterErr error
+		filteredContent, hitWords, filterErr = h.SensitiveService.FilterText(originalContent)
+		if filterErr != nil {
+			log.Printf("Filter text error: %v", filterErr)
+		}
+		if len(hitWords) > 0 {
+			isFiltered = true
+		}
+	}
+
+	needsTrans := h.TranslateService.NeedsTranslation(filteredContent)
+
+	filteredHitsStr := ""
+	if len(hitWords) > 0 {
+		hitsBytes, _ := json.Marshal(hitWords)
+		filteredHitsStr = string(hitsBytes)
+	}
+
+	syncContent := filteredContent
+	if isFiltered {
+		log.Printf("User %d content filtered, hits: %v", uid, hitWords)
+	}
 
 	item := &models.ClipboardItem{
 		UserID:       uid,
 		SeqID:        seqID,
-		Content:      req.Content,
+		Content:      syncContent,
 		Translation:  "",
 		SourceDevice: req.DeviceID,
 		DeviceName:   req.DeviceName,
 		ContentType:  req.ContentType,
 		IsTranslated: false,
+		IsFiltered:   isFiltered,
+		FilteredHits: filteredHitsStr,
 		CreatedAt:    time.Now(),
 	}
 
@@ -73,28 +111,36 @@ func (h *ClipboardHandler) SyncClipboard(c *gin.Context) {
 		return
 	}
 
-	go h.Hub.SendClipboardSync(uid, websocket.ClipboardSyncData{
-		ID:           item.ID,
-		SeqID:        item.SeqID,
-		Content:      item.Content,
-		Translation:  item.Translation,
-		DeviceName:   item.DeviceName,
-		IsTranslated: item.IsTranslated,
-		ContentType:  item.ContentType,
-		CreatedAt:    item.CreatedAt.Format(time.RFC3339),
-	}, req.DeviceID)
+	silent := settings.SilentMode
+
+	if !silent {
+		go h.Hub.SendClipboardSync(uid, websocket.ClipboardSyncData{
+			ID:           item.ID,
+			SeqID:        item.SeqID,
+			Content:      item.Content,
+			Translation:  item.Translation,
+			DeviceName:   item.DeviceName,
+			IsTranslated: item.IsTranslated,
+			ContentType:  item.ContentType,
+			CreatedAt:    item.CreatedAt.Format(time.RFC3339),
+		}, req.DeviceID)
+	}
 
 	if needsTrans {
-		go h.processTranslationAsync(uid, item, req.DeviceID)
+		go h.processTranslationAsync(uid, item, req.DeviceID, silent)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "同步成功",
-		"item":    item,
+		"message":       "同步成功",
+		"item":          item,
+		"silent_mode":   silent,
+		"is_filtered":   isFiltered,
+		"filtered_hits": hitWords,
+		"original":      originalContent,
 	})
 }
 
-func (h *ClipboardHandler) processTranslationAsync(userID uint, item *models.ClipboardItem, fromDevice string) {
+func (h *ClipboardHandler) processTranslationAsync(userID uint, item *models.ClipboardItem, fromDevice string, silent bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("Translation goroutine panic: %v", r)
@@ -125,13 +171,15 @@ func (h *ClipboardHandler) processTranslationAsync(userID uint, item *models.Cli
 		log.Printf("Update translation Redis error: %v", err)
 	}
 
-	go h.Hub.SendTranslationUpdate(userID, websocket.TranslationUpdateData{
-		ID:          item.ID,
-		SeqID:       item.SeqID,
-		Translation: translation,
-	})
+	if !silent {
+		go h.Hub.SendTranslationUpdate(userID, websocket.TranslationUpdateData{
+			ID:          item.ID,
+			SeqID:       item.SeqID,
+			Translation: translation,
+		})
+	}
 
-	log.Printf("Translation completed for item %d, seq=%d", item.ID, item.SeqID)
+	log.Printf("Translation completed for item %d, seq=%d, silent=%v", item.ID, item.SeqID, silent)
 }
 
 func (h *ClipboardHandler) GetHistory(c *gin.Context) {
